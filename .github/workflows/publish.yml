@@ -48,3 +48,10 @@ jobs:
 
       - name: Verify state remains unchanged
         run: cmp state.json /tmp/state-before.json
+
+      - name: Test Git write configuration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git status --short
+          echo "Git configuration test passed."
