@@ -53,5 +53,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git status --short
-          echo "Git configuration test passed."
+
+      - name: Test persistent write on a temporary branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="test-state-persistence-${GITHUB_RUN_ID}"
+          git switch -c "$branch"
+          echo "Persistence test run: ${GITHUB_RUN_ID}" > persistence-test.txt
+          git add persistence-test.txt
+          git commit -m "Test state persistence"
+          git push origin "$branch"
+          echo "Temporary branch push succeeded."
+          git push origin --delete "$branch"
