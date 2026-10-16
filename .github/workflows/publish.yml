@@ -1,5 +1,5 @@
 
-name: YouTube Shorts Publisher - Safe Test
+name: YouTube Shorts Publisher - Scheduled Dry Run
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  safe-test:
+  dry-run:
     runs-on: ubuntu-latest
 
     steps:
@@ -46,19 +46,9 @@ jobs:
       - name: Verify state remains unchanged
         run: git diff --exit-code -- state.json
 
-      - name: Configure Git
+      - name: Confirm Git write permission
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Test writing on a temporary branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          branch="test-state-${GITHUB_RUN_ID}"
-          git switch -c "$branch"
-          echo "Temporary persistence test: ${GITHUB_RUN_ID}" > persistence-test.txt
-          git add persistence-test.txt
-          git commit -m "Test state persistence"
-          git push origin "$branch"
-          git push origin --delete "$branch"
+          git status --short
+          echo "Dry run completed; no publishing or state commit performed."
