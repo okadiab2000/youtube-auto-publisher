@@ -263,24 +263,20 @@ def publish_video(youtube, path, title):
     return response["id"]
 
 
+
 def main():
-    publish = "--publish" in sys.argv
+    mode = "dry-run"
+
+    if "--prepare" in sys.argv:
+        mode = "prepare"
+    elif "--publish" in sys.argv:
+        mode = "publish"
 
     if FOLDER_ID == "PUT_FOLDER_ID_HERE":
-        raise RuntimeError(
-            "Set DRIVE_FOLDER_ID to your actual Drive folder ID."
-        )
+        raise RuntimeError("Set DRIVE_FOLDER_ID to your actual Drive folder ID.")
 
     now = datetime.now(CAIRO)
     slot = now.strftime("%Y-%m-%d-%H")
-
-    if publish and now.hour not in ALLOWED_HOURS:
-        print(f"Cairo time: {now:%Y-%m-%d %H:%M}")
-        print(
-            "Outside the 3 PM / 8 PM publishing hours. "
-            "Nothing published."
-        )
-        return
 
     state = load_json(
         STATE_FILE,
@@ -299,33 +295,75 @@ def main():
     state.setdefault("processed_slots", [])
     state.setdefault("pending_upload", None)
 
-    # Fail closed if an earlier upload may have an unknown outcome.
+    if mode == "publish":
+        pending = state["pending_upload"]
+
+        if pending is None:
+            raise RuntimeError("No prepared upload exists. Nothing published.")
+
+        creds = get_credentials()
+        drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+        youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+        video = {
+            "name": pending["filename"],
+            "drive_id": pending["drive_file_id"],
+        }
+
+        path = None
+
+        try:
+            path = download_video(drive, video)
+            youtube_id = publish_video(youtube, path, pending["title"])
+
+            state["published"].append({
+                "filename": pending["filename"],
+                "drive_file_id": pending["drive_file_id"],
+                "youtube_video_id": youtube_id,
+                "title": pending["title"],
+                "published_at": datetime.now(CAIRO).isoformat(),
+                "slot": pending["slot"],
+            })
+
+            state["next_video_index"] = pending["video_index"] + 1
+            state["next_title_index"] = (
+                pending["title_index"] + 1
+            ) % len(get_titles())
+
+            state["processed_slots"].append(pending["slot"])
+            state["processed_slots"] = state["processed_slots"][-90:]
+            state["pending_upload"] = None
+
+            save_state(state)
+
+            print(f"Published successfully: https://youtu.be/{youtube_id}")
+
+        finally:
+            if path and os.path.exists(path):
+                os.remove(path)
+
+        return
+
     if state["pending_upload"] is not None:
         raise RuntimeError(
             "A previous upload is unresolved. "
-            "Check YouTube before retrying."
+            "Check YouTube and reconcile state.json before retrying."
         )
 
-    if publish and slot in state["processed_slots"]:
-        print(f"Slot {slot} already processed. Nothing published.")
+    if mode == "prepare" and now.hour not in ALLOWED_HOURS:
+        print(f"Cairo time: {now:%Y-%m-%d %H:%M}")
+        print("Outside the scheduled publishing hours. Nothing prepared.")
+        return
+
+    if mode == "prepare" and slot in state["processed_slots"]:
+        print(f"Slot {slot} already processed. Nothing prepared.")
         return
 
     titles = get_titles()
     queue_data = load_json(QUEUE_FILE)
 
     creds = get_credentials()
-    drive = build(
-        "drive",
-        "v3",
-        credentials=creds,
-        cache_discovery=False,
-    )
-    youtube = build(
-        "youtube",
-        "v3",
-        credentials=creds,
-        cache_discovery=False,
-    )
+    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     drive_videos = get_drive_videos(drive)
     queue = match_queue(queue_data, drive_videos)
@@ -337,6 +375,9 @@ def main():
         print("All videos in the queue have been processed.")
         return
 
+    if title_index >= len(titles):
+        raise RuntimeError("next_title_index is outside the available titles.")
+
     video = queue[video_index]
     title = titles[title_index]
 
@@ -346,53 +387,22 @@ def main():
     print(f"Filename: {video['name']}")
     print(f"Title: {title}")
 
-    if not publish:
+    if mode == "dry-run":
         print("DRY RUN: no video was published.")
         return
 
-    # Record the attempt before contacting YouTube.
-    # An unresolved attempt blocks subsequent automatic uploads.
     state["pending_upload"] = {
         "filename": video["name"],
         "drive_file_id": video["drive_id"],
         "title": title,
         "slot": slot,
+        "video_index": video_index,
+        "title_index": title_index,
         "started_at": datetime.now(CAIRO).isoformat(),
     }
+
     save_state(state)
-
-    path = None
-
-    try:
-        path = download_video(drive, video)
-        youtube_id = publish_video(youtube, path, title)
-
-        state["published"].append({
-            "filename": video["name"],
-            "drive_file_id": video["drive_id"],
-            "youtube_video_id": youtube_id,
-            "title": title,
-            "published_at": datetime.now(CAIRO).isoformat(),
-            "slot": slot,
-        })
-
-        state["next_video_index"] = video_index + 1
-        state["next_title_index"] = (
-            title_index + 1
-        ) % len(titles)
-        state["processed_slots"].append(slot)
-        state["processed_slots"] = state["processed_slots"][-90:]
-        state["pending_upload"] = None
-
-        save_state(state)
-
-        print(
-            f"Published successfully: https://youtu.be/{youtube_id}"
-        )
-
-    finally:
-        if path and os.path.exists(path):
-            os.remove(path)
+    print("Upload prepared. Persist state.json before uploading.")
 
 
 if __name__ == "__main__":
