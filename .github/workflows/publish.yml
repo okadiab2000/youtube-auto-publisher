@@ -1,4 +1,4 @@
-name: YouTube Shorts Publisher - Safe Test
+name: YouTube Shorts Publisher - Dry Run
 
 on:
   workflow_dispatch:
@@ -7,8 +7,9 @@ permissions:
   contents: read
 
 jobs:
-  safe-test:
+  dry-run:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,11 +22,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Verify project files
+      - name: Validate project files
         run: |
-          python --version
           test -f upload_short.py
           test -f queue.json
           test -f titles.txt
           test -f state.json
-          echo "Safe test passed. No video was uploaded."
+
+      - name: Run publisher in DRY RUN mode
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        run: python upload_short.py
