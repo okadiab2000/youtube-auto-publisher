@@ -17,7 +17,10 @@ QUEUE_FILE = BASE / "queue.json"
 TITLES_FILE = BASE / "titles.txt"
 STATE_FILE = BASE / "state.json"
 
-FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "1iiUPSTGe0SVsCkjofChkEW4MaceIhXSY")
+FOLDER_ID = os.environ.get(
+    "DRIVE_FOLDER_ID",
+    "1iiUPSTGe0SVsCkjofChkEW4MaceIhXSY",
+)
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
@@ -107,10 +110,15 @@ def get_drive_videos(drive):
 
 def match_queue(queue_data, drive_videos):
     if isinstance(queue_data, dict):
-        queue_data = queue_data.get("videos", queue_data.get("queue", []))
+        queue_data = queue_data.get(
+            "videos",
+            queue_data.get("queue", []),
+        )
 
     if not isinstance(queue_data, list) or not queue_data:
-        raise RuntimeError("queue.json is empty or has an unexpected format.")
+        raise RuntimeError(
+            "queue.json is empty or has an unexpected format."
+        )
 
     drive_by_name = {}
 
@@ -132,7 +140,9 @@ def match_queue(queue_data, drive_videos):
             name = Path(entry["relative_path"]).name
 
         if not name:
-            raise RuntimeError("A queue.json entry has no filename.")
+            raise RuntimeError(
+                "A queue.json entry has no filename."
+            )
 
         item = drive_by_name.get(name)
 
@@ -170,7 +180,9 @@ def get_titles():
         raise RuntimeError("titles.txt contains no titles.")
 
     if any(len(title) > 100 for title in titles):
-        raise RuntimeError("Every YouTube title must be 100 characters or less.")
+        raise RuntimeError(
+            "Every YouTube title must be 100 characters or less."
+        )
 
     return titles
 
@@ -185,7 +197,9 @@ def download_video(drive, video):
     temp_path = temp.name
 
     try:
-        request = drive.files().get_media(fileId=video["drive_id"])
+        request = drive.files().get_media(
+            fileId=video["drive_id"]
+        )
         downloader = MediaIoBaseDownload(temp, request)
 
         done = False
@@ -193,7 +207,9 @@ def download_video(drive, video):
             status, done = downloader.next_chunk()
 
             if status:
-                print(f"Download: {int(status.progress() * 100)}%")
+                print(
+                    f"Download: {int(status.progress() * 100)}%"
+                )
 
         temp.close()
         return temp_path
@@ -216,7 +232,11 @@ def publish_video(youtube, path, title):
             "snippet": {
                 "title": title,
                 "description": description,
-                "tags": ["shorts", "قرآن_كريم", "تلاوة_خاشعة"],
+                "tags": [
+                    "shorts",
+                    "قرآن_كريم",
+                    "تلاوة_خاشعة",
+                ],
                 "categoryId": "22",
             },
             "status": {
@@ -247,14 +267,19 @@ def main():
     publish = "--publish" in sys.argv
 
     if FOLDER_ID == "PUT_FOLDER_ID_HERE":
-        raise RuntimeError("Set DRIVE_FOLDER_ID to your actual Drive folder ID.")
+        raise RuntimeError(
+            "Set DRIVE_FOLDER_ID to your actual Drive folder ID."
+        )
 
     now = datetime.now(CAIRO)
     slot = now.strftime("%Y-%m-%d-%H")
 
     if publish and now.hour not in ALLOWED_HOURS:
         print(f"Cairo time: {now:%Y-%m-%d %H:%M}")
-        print("Outside the 3 PM / 8 PM publishing hours. Nothing published.")
+        print(
+            "Outside the 3 PM / 8 PM publishing hours. "
+            "Nothing published."
+        )
         return
 
     state = load_json(
@@ -264,6 +289,7 @@ def main():
             "next_title_index": 0,
             "published": [],
             "processed_slots": [],
+            "pending_upload": None,
         },
     )
 
@@ -271,6 +297,14 @@ def main():
     state.setdefault("next_title_index", 0)
     state.setdefault("published", [])
     state.setdefault("processed_slots", [])
+    state.setdefault("pending_upload", None)
+
+    # Fail closed if an earlier upload may have an unknown outcome.
+    if state["pending_upload"] is not None:
+        raise RuntimeError(
+            "A previous upload is unresolved. "
+            "Check YouTube before retrying."
+        )
 
     if publish and slot in state["processed_slots"]:
         print(f"Slot {slot} already processed. Nothing published.")
@@ -280,8 +314,18 @@ def main():
     queue_data = load_json(QUEUE_FILE)
 
     creds = get_credentials()
-    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
-    youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    drive = build(
+        "drive",
+        "v3",
+        credentials=creds,
+        cache_discovery=False,
+    )
+    youtube = build(
+        "youtube",
+        "v3",
+        credentials=creds,
+        cache_discovery=False,
+    )
 
     drive_videos = get_drive_videos(drive)
     queue = match_queue(queue_data, drive_videos)
@@ -306,6 +350,17 @@ def main():
         print("DRY RUN: no video was published.")
         return
 
+    # Record the attempt before contacting YouTube.
+    # An unresolved attempt blocks subsequent automatic uploads.
+    state["pending_upload"] = {
+        "filename": video["name"],
+        "drive_file_id": video["drive_id"],
+        "title": title,
+        "slot": slot,
+        "started_at": datetime.now(CAIRO).isoformat(),
+    }
+    save_state(state)
+
     path = None
 
     try:
@@ -322,13 +377,18 @@ def main():
         })
 
         state["next_video_index"] = video_index + 1
-        state["next_title_index"] = (title_index + 1) % len(titles)
+        state["next_title_index"] = (
+            title_index + 1
+        ) % len(titles)
         state["processed_slots"].append(slot)
         state["processed_slots"] = state["processed_slots"][-90:]
+        state["pending_upload"] = None
 
         save_state(state)
 
-        print(f"Published successfully: https://youtu.be/{youtube_id}")
+        print(
+            f"Published successfully: https://youtu.be/{youtube_id}"
+        )
 
     finally:
         if path and os.path.exists(path):
