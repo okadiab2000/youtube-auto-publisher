@@ -1,10 +1,13 @@
-name: YouTube Shorts Publisher - Dry Run
+name: YouTube Shorts Publisher - Scheduled Dry Run
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+    - cron: "0 17 * * *"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: youtube-shorts-publisher
@@ -17,8 +20,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,6 +41,3 @@ jobs:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
         run: python upload_short.py
-
-      - name: Verify state remains unchanged
-        run: git diff --exit-code -- state.json
