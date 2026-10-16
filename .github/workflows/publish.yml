@@ -1,5 +1,5 @@
 
-name: YouTube Shorts Publisher - Scheduled Dry Run
+name: YouTube Shorts Publisher - Safe Test
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
     - cron: "0 17 * * *"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: youtube-shorts-publisher
@@ -37,18 +37,14 @@ jobs:
           test -f titles.txt
           test -f state.json
 
-      - name: Run publisher in DRY RUN mode
+      - name: Run safe dry run
         env:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
         run: python upload_short.py
 
-      - name: Verify state remains unchanged
+      - name: Confirm state unchanged
         run: git diff --exit-code -- state.json
 
-      - name: Confirm Git write permission
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git status --short
-          echo "Dry run completed; no publishing or state commit performed."
+      - name: Report result
+        run: echo "Safe dry run completed. No YouTube upload was requested."
