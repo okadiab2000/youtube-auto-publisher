@@ -37,32 +37,25 @@ jobs:
           test -f titles.txt
           test -f state.json
 
-      - name: Save original state
-        run: cp state.json /tmp/state-before.json
-
       - name: Run publisher in DRY RUN mode
         env:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
         run: python upload_short.py
 
-      - name: Verify state remains unchanged
-        run: cmp state.json /tmp/state-before.json
+      - name: Verify state has not changed
+        run: git diff --exit-code -- state.json
 
-      - name: Test Git write configuration
+      - name: Persist state if changed
         run: |
+          if git diff --quiet -- state.json; then
+            echo "No state changes to save."
+            exit 0
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Test persistent write on a temporary branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          branch="test-state-persistence-${GITHUB_RUN_ID}"
-          git switch -c "$branch"
-          echo "Persistence test run: ${GITHUB_RUN_ID}" > persistence-test.txt
-          git add persistence-test.txt
-          git commit -m "Test state persistence"
-          git push origin "$branch"
-          echo "Temporary branch push succeeded."
-          git push origin --delete "$branch"
+          git add state.json
+          git commit -m "Update YouTube publishing state"
+          git push origin HEAD:main
