@@ -41,14 +41,21 @@ def load_json(path, default=None):
         return json.load(file)
 
 
+def save_json_atomic(path, data):
+    temp_file = path.with_suffix(".tmp")
+
+    try:
+        with temp_file.open("w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+            file.write("\n")
+
+        temp_file.replace(path)
+    finally:
+        temp_file.unlink(missing_ok=True)
+
+
 def save_state(state):
-    temp_file = STATE_FILE.with_suffix(".tmp")
-
-    with temp_file.open("w", encoding="utf-8") as file:
-        json.dump(state, file, ensure_ascii=False, indent=2)
-        file.write("\n")
-
-    temp_file.replace(STATE_FILE)
+    save_json_atomic(STATE_FILE, state)
 
 
 def get_credentials():
@@ -102,48 +109,111 @@ def get_drive_videos(drive):
         if not page_token:
             break
 
-    return [
+    videos = [
         item for item in result
         if item.get("mimeType", "").startswith("video/")
     ]
 
+    names = [video["name"] for video in videos]
+    if len(names) != len(set(names)):
+        raise RuntimeError(
+            "Duplicate video filenames found in Drive. "
+            "Rename duplicates before continuing."
+        )
+
+    return videos
+
+
+def queue_entries(queue_data):
+    if isinstance(queue_data, list):
+        return queue_data
+
+    if isinstance(queue_data, dict):
+        if isinstance(queue_data.get("videos"), list):
+            return queue_data["videos"]
+        if isinstance(queue_data.get("queue"), list):
+            return queue_data["queue"]
+
+    raise RuntimeError(
+        "queue.json must be a list or contain a 'videos'/'queue' list."
+    )
+
+
+def entry_filename(entry):
+    if not isinstance(entry, dict):
+        raise RuntimeError("Invalid entry in queue.json.")
+
+    name = entry.get("filename")
+
+    if not name and entry.get("relative_path"):
+        name = Path(entry["relative_path"]).name
+
+    if not name:
+        raise RuntimeError("A queue entry has no filename.")
+
+    return name
+
+
+def sync_queue_with_drive(queue_data, drive_videos):
+    entries = queue_entries(queue_data)
+    existing_names = set()
+
+    for entry in entries:
+        name = entry_filename(entry)
+
+        if name in existing_names:
+            raise RuntimeError(
+                f"Duplicate filename in queue.json: {name}"
+            )
+
+        existing_names.add(name)
+
+    new_videos = sorted(
+        (
+            video for video in drive_videos
+            if video["name"] not in existing_names
+        ),
+        key=lambda video: (video["name"].casefold(), video["name"]),
+    )
+
+    for video in new_videos:
+        entries.append({"filename": video["name"]})
+
+    if new_videos:
+        if isinstance(queue_data, dict):
+            if isinstance(queue_data.get("videos"), list):
+                queue_data["videos"] = entries
+            elif isinstance(queue_data.get("queue"), list):
+                queue_data["queue"] = entries
+            else:
+                queue_data["videos"] = entries
+        else:
+            queue_data = entries
+
+        save_json_atomic(QUEUE_FILE, queue_data)
+
+        print(f"Added {len(new_videos)} new video(s) to queue.json.")
+        for video in new_videos:
+            print(f"New video: {video['name']}")
+    else:
+        print("No new videos found in Google Drive.")
+
+    return queue_data
+
 
 def match_queue(queue_data, drive_videos):
-    if isinstance(queue_data, dict):
-        queue_data = queue_data.get(
-            "videos",
-            queue_data.get("queue", []),
-        )
+    entries = queue_entries(queue_data)
 
-    if not isinstance(queue_data, list) or not queue_data:
-        raise RuntimeError(
-            "queue.json is empty or has an unexpected format."
-        )
-
-    drive_by_name = {}
-
-    for video in drive_videos:
-        name = video["name"]
-
-        if name in drive_by_name:
-            raise RuntimeError(f"Duplicate filename in Drive: {name}")
-
-        drive_by_name[name] = video
+    drive_by_name = {
+        video["name"]: video
+        for video in drive_videos
+    }
 
     matched = []
     missing = []
 
-    for entry in queue_data:
-        name = entry.get("filename")
-
-        if not name and entry.get("relative_path"):
-            name = Path(entry["relative_path"]).name
-
-        if not name:
-            raise RuntimeError(
-                "A queue.json entry has no filename."
-            )
-
+    for entry in entries:
+        name = entry_filename(entry)
         item = drive_by_name.get(name)
 
         if not item:
@@ -156,8 +226,8 @@ def match_queue(queue_data, drive_videos):
 
     if missing:
         raise RuntimeError(
-            f"{len(missing)} filenames from queue.json were not found "
-            "in the Drive folder. No upload was attempted.\n"
+            f"{len(missing)} queued video(s) were not found in Drive. "
+            "No upload was attempted.\n"
             + "\n".join(missing[:10])
         )
 
@@ -207,9 +277,7 @@ def download_video(drive, video):
             status, done = downloader.next_chunk()
 
             if status:
-                print(
-                    f"Download: {int(status.progress() * 100)}%"
-                )
+                print(f"Download: {int(status.progress() * 100)}%")
 
         temp.close()
         return temp_path
@@ -263,7 +331,6 @@ def publish_video(youtube, path, title):
     return response["id"]
 
 
-
 def main():
     mode = "dry-run"
 
@@ -300,6 +367,12 @@ def main():
 
         if pending is None:
             raise RuntimeError("No prepared upload exists. Nothing published.")
+
+        if pending.get("status") == "uploading":
+            raise RuntimeError(
+                "This upload was already marked as started. "
+                "Check YouTube before retrying to avoid duplicates."
+            )
 
         creds = get_credentials()
         drive = build("drive", "v3", credentials=creds, cache_discovery=False)
@@ -366,6 +439,9 @@ def main():
     drive = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     drive_videos = get_drive_videos(drive)
+
+    # Automatically append new Drive videos without reordering existing entries.
+    queue_data = sync_queue_with_drive(queue_data, drive_videos)
     queue = match_queue(queue_data, drive_videos)
 
     video_index = state["next_video_index"]
@@ -383,6 +459,7 @@ def main():
 
     print(f"Cairo time: {now:%Y-%m-%d %H:%M:%S}")
     print(f"Drive videos: {len(drive_videos)}")
+    print(f"Queue videos: {len(queue)}")
     print(f"Next video: {video_index + 1}/{len(queue)}")
     print(f"Filename: {video['name']}")
     print(f"Title: {title}")
