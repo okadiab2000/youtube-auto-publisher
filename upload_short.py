@@ -4,13 +4,14 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+
 
 BASE = Path(__file__).resolve().parent
 QUEUE_FILE = BASE / "queue.json"
@@ -29,6 +30,21 @@ SCOPES = [
 
 CAIRO = ZoneInfo("Africa/Cairo")
 ALLOWED_HOURS = {15, 20}
+START_DATE = date(2026, 10, 19)
+
+
+def check_schedule(now=None):
+    now = now or datetime.now(CAIRO)
+
+    if now.date() < START_DATE:
+        raise RuntimeError(
+            f"Automatic publishing is disabled until {START_DATE.isoformat()}."
+        )
+
+    if now.hour not in ALLOWED_HOURS:
+        raise RuntimeError(
+            f"Outside publishing hours. Cairo time: {now:%Y-%m-%d %H:%M}"
+        )
 
 
 def load_json(path, default=None):
@@ -115,6 +131,7 @@ def get_drive_videos(drive):
     ]
 
     names = [video["name"] for video in videos]
+
     if len(names) != len(set(names)):
         raise RuntimeError(
             "Duplicate video filenames found in Drive. "
@@ -131,6 +148,7 @@ def queue_entries(queue_data):
     if isinstance(queue_data, dict):
         if isinstance(queue_data.get("videos"), list):
             return queue_data["videos"]
+
         if isinstance(queue_data.get("queue"), list):
             return queue_data["queue"]
 
@@ -176,27 +194,29 @@ def sync_queue_with_drive(queue_data, drive_videos):
         key=lambda video: (video["name"].casefold(), video["name"]),
     )
 
+    if not new_videos:
+        print("No new videos found in Google Drive.")
+        return queue_data
+
     for video in new_videos:
         entries.append({"filename": video["name"]})
 
-    if new_videos:
-        if isinstance(queue_data, dict):
-            if isinstance(queue_data.get("videos"), list):
-                queue_data["videos"] = entries
-            elif isinstance(queue_data.get("queue"), list):
-                queue_data["queue"] = entries
-            else:
-                queue_data["videos"] = entries
+    if isinstance(queue_data, dict):
+        if isinstance(queue_data.get("videos"), list):
+            queue_data["videos"] = entries
+        elif isinstance(queue_data.get("queue"), list):
+            queue_data["queue"] = entries
         else:
-            queue_data = entries
-
-        save_json_atomic(QUEUE_FILE, queue_data)
-
-        print(f"Added {len(new_videos)} new video(s) to queue.json.")
-        for video in new_videos:
-            print(f"New video: {video['name']}")
+            queue_data["videos"] = entries
     else:
-        print("No new videos found in Google Drive.")
+        queue_data = entries
+
+    save_json_atomic(QUEUE_FILE, queue_data)
+
+    print(f"Added {len(new_videos)} new video(s) to queue.json.")
+
+    for video in new_videos:
+        print(f"New video: {video['name']}")
 
     return queue_data
 
@@ -270,9 +290,10 @@ def download_video(drive, video):
         request = drive.files().get_media(
             fileId=video["drive_id"]
         )
-        downloader = MediaIoBaseDownload(temp, request)
 
+        downloader = MediaIoBaseDownload(temp, request)
         done = False
+
         while not done:
             status, done = downloader.next_chunk()
 
@@ -340,7 +361,9 @@ def main():
         mode = "publish"
 
     if FOLDER_ID == "PUT_FOLDER_ID_HERE":
-        raise RuntimeError("Set DRIVE_FOLDER_ID to your actual Drive folder ID.")
+        raise RuntimeError(
+            "Set DRIVE_FOLDER_ID to your actual Drive folder ID."
+        )
 
     now = datetime.now(CAIRO)
     slot = now.strftime("%Y-%m-%d-%H")
@@ -362,21 +385,32 @@ def main():
     state.setdefault("processed_slots", [])
     state.setdefault("pending_upload", None)
 
+    # Publishing must respect the date and Cairo time window.
+    if mode in ("prepare", "publish"):
+        check_schedule(now)
+
     if mode == "publish":
         pending = state["pending_upload"]
 
         if pending is None:
-            raise RuntimeError("No prepared upload exists. Nothing published.")
-
-        if pending.get("status") == "uploading":
             raise RuntimeError(
-                "This upload was already marked as started. "
-                "Check YouTube before retrying to avoid duplicates."
+                "No prepared upload exists. Nothing published."
             )
 
+        # The workflow sets status='uploading' before calling this script.
+        # Do not reject that status here; the workflow uses it as a retry lock.
         creds = get_credentials()
-        drive = build("drive", "v3", credentials=creds, cache_discovery=False)
-        youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+        drive = build(
+            "drive", "v3",
+            credentials=creds,
+            cache_discovery=False,
+        )
+        youtube = build(
+            "youtube", "v3",
+            credentials=creds,
+            cache_discovery=False,
+        )
 
         video = {
             "name": pending["filename"],
@@ -387,7 +421,13 @@ def main():
 
         try:
             path = download_video(drive, video)
-            youtube_id = publish_video(youtube, path, pending["title"])
+            youtube_id = publish_video(
+                youtube,
+                path,
+                pending["title"],
+            )
+
+            titles = get_titles()
 
             state["published"].append({
                 "filename": pending["filename"],
@@ -401,15 +441,19 @@ def main():
             state["next_video_index"] = pending["video_index"] + 1
             state["next_title_index"] = (
                 pending["title_index"] + 1
-            ) % len(get_titles())
+            ) % len(titles)
 
-            state["processed_slots"].append(pending["slot"])
+            if pending["slot"] not in state["processed_slots"]:
+                state["processed_slots"].append(pending["slot"])
+
             state["processed_slots"] = state["processed_slots"][-90:]
             state["pending_upload"] = None
 
             save_state(state)
 
-            print(f"Published successfully: https://youtu.be/{youtube_id}")
+            print(
+                f"Published successfully: https://youtu.be/{youtube_id}"
+            )
 
         finally:
             if path and os.path.exists(path):
@@ -419,28 +463,28 @@ def main():
 
     if state["pending_upload"] is not None:
         raise RuntimeError(
-            "A previous upload is unresolved. "
-            "Check YouTube and reconcile state.json before retrying."
+            "A previous upload is unresolved. Check YouTube and "
+            "reconcile state.json before retrying."
         )
 
-    if mode == "prepare" and now.hour not in ALLOWED_HOURS:
-        print(f"Cairo time: {now:%Y-%m-%d %H:%M}")
-        print("Outside the scheduled publishing hours. Nothing prepared.")
-        return
-
-    if mode == "prepare" and slot in state["processed_slots"]:
-        print(f"Slot {slot} already processed. Nothing prepared.")
-        return
+    if mode == "prepare":
+        if slot in state["processed_slots"]:
+            print(f"Slot {slot} already processed. Nothing prepared.")
+            return
 
     titles = get_titles()
     queue_data = load_json(QUEUE_FILE)
 
     creds = get_credentials()
-    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+    drive = build(
+        "drive", "v3",
+        credentials=creds,
+        cache_discovery=False,
+    )
 
     drive_videos = get_drive_videos(drive)
 
-    # Automatically append new Drive videos without reordering existing entries.
+    # Discover new Drive videos while preserving the existing queue order.
     queue_data = sync_queue_with_drive(queue_data, drive_videos)
     queue = match_queue(queue_data, drive_videos)
 
@@ -452,7 +496,9 @@ def main():
         return
 
     if title_index >= len(titles):
-        raise RuntimeError("next_title_index is outside the available titles.")
+        raise RuntimeError(
+            "next_title_index is outside the available titles."
+        )
 
     video = queue[video_index]
     title = titles[title_index]
