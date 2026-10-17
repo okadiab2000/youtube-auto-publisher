@@ -1,4 +1,4 @@
-```python
+
 import json
 import os
 import sys
@@ -766,4 +766,4 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-```
+
