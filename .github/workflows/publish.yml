@@ -1,4 +1,4 @@
-
+```yaml
 name: YouTube Shorts Publisher - Safe Publishing
 
 on:
@@ -16,6 +16,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -35,30 +36,11 @@ jobs:
           test -f queue.json
           test -f titles.txt
           test -f state.json
+          python -m py_compile upload_short.py
 
       - name: Check Cairo publishing time
         id: slot
-        run: |
-          python - <<'PY'
-          import os
-          from datetime import date, datetime
-          from zoneinfo import ZoneInfo
-
-          now = datetime.now(ZoneInfo("Africa/Cairo"))
-          start_date = date(2026, 10, 19)
-
-          allowed = (
-              now.date() >= start_date
-              and now.hour in (15, 20)
-          )
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"allowed={'true' if allowed else 'false'}\n")
-
-          print(f"Cairo time: {now:%Y-%m-%d %H:%M:%S}")
-          print(f"Start date: {start_date}")
-          print(f"Publishing window: {allowed}")
-          PY
+        run: python upload_short.py --check-slot
 
       - name: Check for a pending video
         id: pending
@@ -73,8 +55,10 @@ jobs:
 
           pending = state.get("pending_upload") is not None
 
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"exists={'true' if pending else 'false'}\n")
+
+          print(f"Pending upload exists: {pending}")
           PY
 
       - name: Prepare next video
@@ -89,7 +73,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add state.json queue.json
+
           if ! git diff --cached --quiet; then
             git commit -m "Save prepared video state and queue"
             git push
@@ -99,55 +85,35 @@ jobs:
         id: lock
         if: steps.slot.outputs.allowed == 'true'
         run: |
-          python - <<'PY'
-          import json
-          import os
-
-          path = "state.json"
-
-          with open(path, encoding="utf-8") as f:
-              state = json.load(f)
-
-          pending = state.get("pending_upload")
-          attempt = False
-
-          if pending is not None:
-              if pending.get("status") != "uploading":
-                  pending["status"] = "uploading"
-                  attempt = True
-
-          with open(path, "w", encoding="utf-8") as f:
-              json.dump(state, f, ensure_ascii=False, indent=2)
-              f.write("\n")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"attempt={'true' if attempt else 'false'}\n")
-
-          print(f"New upload attempt authorized: {attempt}")
-          PY
+          python upload_short.py --lock
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add state.json
+
           if ! git diff --cached --quiet; then
             git commit -m "Lock video before upload"
             git push
           fi
 
       - name: Publish video publicly
-        if: steps.lock.outputs.attempt == 'true'
+        if: steps.slot.outputs.allowed == 'true' && steps.lock.outputs.attempt == 'true'
         env:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
         run: python upload_short.py --publish
 
-      - name: Save successful publishing state
-        if: steps.lock.outputs.attempt == 'true'
+      - name: Save final publishing state
+        if: ${{ always() && steps.slot.outputs.allowed == 'true' && steps.lock.outputs.attempt == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add state.json queue.json
+
           if ! git diff --cached --quiet; then
-            git commit -m "Record published video"
+            git commit -m "Record final publishing state"
             git push
           fi
+```
