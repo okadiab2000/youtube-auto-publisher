@@ -1,16 +1,18 @@
 {
-  "next_video_index": 0,
-  "next_title_index": 0,
-  "published": [],
-  "processed_slots": [],
-  "pending_upload": {
-    "filename": "#اكتب_شي_تؤجر_عليه ♥😴 [M5eT5TcirOY].webm",
-    "drive_file_id": "1x6igLX8VnN4O4aBv5agsGp_2mrEEDbxv",
-    "title": "استمع وريح قلبك ❤️ #shorts #اكسبلور_فولو #القرآن_الكريم",
-    "slot": "2026-10-17-15",
-    "video_index": 0,
-    "title_index": 0,
-    "started_at": "2026-10-17T15:02:57.075527+03:00",
-    "status": "uploading"
-  }
+  "next_video_index": 1,
+  "next_title_index": 1,
+  "published": [
+    {
+      "filename": "#اكتب_شي_تؤجر_عليه ♥😴 [M5eT5TcirOY].webm",
+      "drive_file_id": "1x6igLX8VnN4O4aBv5agsGp_2mrEEDbxv",
+      "youtube_video_id": "Of5DWclsLCw",
+      "title": "استمع وريح قلبك ❤️ #shorts #اكسبلور_فولو #القرآن_الكريم",
+      "published_at": "2026-10-17T20:01:05.408568+03:00",
+      "slot": "2026-10-17-15"
+    }
+  ],
+  "processed_slots": [
+    "2026-10-17-15"
+  ],
+  "pending_upload": null
 }
