@@ -1,4 +1,4 @@
-```yaml
+
 name: YouTube Shorts Publisher - Safe Publishing
 
 on:
@@ -116,4 +116,3 @@ jobs:
             git commit -m "Record final publishing state"
             git push
           fi
-```
