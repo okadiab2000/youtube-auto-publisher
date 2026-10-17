@@ -1,8 +1,10 @@
 
-name: YouTube Shorts Publisher - Prepare Test
+name: YouTube Shorts Publisher - Safe Publishing
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
 
 permissions:
   contents: write
@@ -12,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare-test:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,13 +29,57 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Prepare next video only
+      - name: Validate project files
+        run: |
+          test -f upload_short.py
+          test -f queue.json
+          test -f titles.txt
+          test -f state.json
+
+      - name: Check Cairo publishing time
+        id: slot
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(ZoneInfo("Africa/Cairo"))
+          allowed = now.hour in (15, 20)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"allowed={'true' if allowed else 'false'}\n")
+
+          print(f"Cairo time: {now:%Y-%m-%d %H:%M:%S}")
+          print(f"Publishing window: {allowed}")
+          PY
+
+      - name: Check for a pending video
+        id: pending
+        if: steps.slot.outputs.allowed == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          with open("state.json", encoding="utf-8") as f:
+              state = json.load(f)
+
+          pending = state.get("pending_upload") is not None
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"exists={'true' if pending else 'false'}\n")
+          PY
+
+      - name: Prepare next video
+        if: steps.slot.outputs.allowed == 'true' && steps.pending.outputs.exists == 'false'
         env:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
         run: python upload_short.py --prepare
 
-      - name: Save preparation state
+      - name: Save prepared state
+        if: steps.slot.outputs.allowed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -41,6 +87,60 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "Save prepared video state"
             git push
-          else
-            echo "No state changes to save."
+          fi
+
+      - name: Lock upload against automatic retries
+        id: lock
+        if: steps.slot.outputs.allowed == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          path = "state.json"
+          with open(path, encoding="utf-8") as f:
+              state = json.load(f)
+
+          pending = state.get("pending_upload")
+          attempt = False
+
+          if pending is not None:
+              if pending.get("status") != "uploading":
+                  pending["status"] = "uploading"
+                  attempt = True
+
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(state, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"attempt={'true' if attempt else 'false'}\n")
+
+          print(f"New upload attempt authorized: {attempt}")
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Lock video before upload"
+            git push
+          fi
+
+      - name: Publish video publicly
+        if: steps.lock.outputs.attempt == 'true'
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        run: python upload_short.py --publish
+
+      - name: Save successful publishing state
+        if: steps.lock.outputs.attempt == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Record published video"
+            git push
           fi
