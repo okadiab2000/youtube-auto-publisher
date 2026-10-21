@@ -197,9 +197,9 @@ def get_drive_videos(drive):
                 "and mimeType contains 'video/'"
             ),
             pageSize=1000,
-            orderBy="name",
+            orderBy="modifiedTime",
             pageToken=page_token,
-            fields="nextPageToken, files(id, name, mimeType, size)",
+            fields="nextPageToken, files(id, name, mimeType, size, modifiedTime)",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         ).execute()
@@ -315,8 +315,13 @@ def sync_queue(drive):
         })
         seen_ids.add(match["id"])
 
-    # Append new Drive videos that were not already in the queue.
-    for item in drive_files:
+    # Append newly discovered videos in oldest-modified-first order.
+    # Existing queue entries retain their established order.
+    new_drive_files = sorted(
+        drive_files,
+        key=lambda item: item.get("modifiedTime", ""),
+    )
+    for item in new_drive_files:
         file_id = item.get("id")
 
         if not file_id or file_id in seen_ids:
@@ -522,17 +527,29 @@ def cmd_prepare():
         print(f"Slot {slot} was already processed. Nothing to prepare.")
         return
 
+    titles = get_titles()
+    video_index = int(state.get("next_video_index", 0))
+    title_index = int(state.get("next_title_index", 0))
+
+    if title_index < 0:
+        raise RuntimeError(f"Invalid next_title_index={title_index}.")
+
+    # Stop before contacting Google APIs when all configured titles are used.
+    if title_index >= len(titles):
+        print(
+            f"TITLE_EXHAUSTED: all {len(titles)} titles have been used. "
+            "No upload will be prepared."
+        )
+        write_github_output("ready", "false")
+        return
+
     drive, _ = get_google_services()
     videos = sync_queue(drive)
-    titles = get_titles()
 
     if not videos:
         raise RuntimeError(
             "No videos were found in the configured Google Drive folder."
         )
-
-    video_index = int(state.get("next_video_index", 0))
-    title_index = int(state.get("next_title_index", 0))
 
     if video_index < 0 or video_index >= len(videos):
         raise RuntimeError(
@@ -549,7 +566,7 @@ def cmd_prepare():
             f"Invalid queue entry at index {video_index}: {video!r}"
         )
 
-    title = titles[title_index % len(titles)]
+    title = titles[title_index]
 
     state["pending_upload"] = {
         "filename": filename,

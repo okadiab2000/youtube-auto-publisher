@@ -41,6 +41,15 @@ def main():
     video_index = int(state.get("next_video_index", 0))
     title_index = int(state.get("next_title_index", 0))
 
+    if title_index < 0:
+        raise RuntimeError(f"Invalid next_title_index={title_index}")
+    if title_index >= len(titles):
+        print("READ-ONLY NEXT-ITEM PREVIEW")
+        print(f"Title count: {len(titles)}")
+        print("TITLE_EXHAUSTED: all titles have been used; no upload should be prepared.")
+        print("State and queue were not modified. No Google APIs called; no video uploaded.")
+        return
+
     if video_index < 0 or video_index >= len(videos):
         raise RuntimeError(
             f"next_video_index={video_index} is outside queue size {len(videos)}"
@@ -54,14 +63,14 @@ def main():
     if not filename:
         raise RuntimeError(f"Queue item {video_index} has no filename")
 
-    title = titles[title_index % len(titles)]
+    title = titles[title_index]
 
     print("READ-ONLY NEXT-ITEM PREVIEW")
     print(f"Queue size: {len(videos)}")
     print(f"Title count: {len(titles)}")
     print(f"Next video position: {video_index + 1}")
     print(f"Next filename: {filename}")
-    print(f"Next title position: {(title_index % len(titles)) + 1}")
+    print(f"Next title position: {title_index + 1}")
     print(f"Next title: {title}")
     print("State and queue were not modified. No Google APIs called; no video uploaded.")
 
