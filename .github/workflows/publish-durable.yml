@@ -1,0 +1,127 @@
+name: YouTube Shorts Publisher - Durable State (Opt In)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Hourly checks; upload_short.py enforces Cairo-local publishing hours.
+    - cron: "0 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: youtube-shorts-publisher
+  cancel-in-progress: false
+
+jobs:
+  publisher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate code and state files
+        run: |
+          test -f upload_short.py
+          test -f queue.json
+          test -f titles.txt
+          test -f state.json
+          python -m py_compile upload_short.py preview_next.py test_schedule_safety.py
+
+      - name: Check Cairo slot
+        id: slot
+        run: python upload_short.py --check-slot
+
+      - name: Read-only preview when live publishing is disabled
+        if: steps.slot.outputs.allowed == 'true' && vars.ENABLE_LIVE_PUBLISHING != 'true'
+        run: |
+          echo "Live publishing is disabled. This run will not call Google APIs or upload a video."
+          python preview_next.py
+
+      - name: Prepare next upload
+        id: prepare
+        if: steps.slot.outputs.allowed == 'true' && vars.ENABLE_LIVE_PUBLISHING == 'true'
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        run: |
+          python upload_short.py --prepare
+          python - <<'PY'
+          import json, os
+          with open("state.json", encoding="utf-8") as f:
+              state = json.load(f)
+          pending = state.get("pending_upload")
+          ready = bool(pending and pending.get("status") == "prepared")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"ready={'true' if ready else 'false'}\n")
+          print(f"Prepared state present: {ready}")
+          PY
+
+      - name: Commit prepared state before authorizing upload
+        if: steps.prepare.outputs.ready == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json queue.json
+          if git diff --cached --quiet; then
+            echo "Expected prepared state changes, but no changes were staged."
+            exit 1
+          fi
+          git commit -m "Persist prepared YouTube upload state"
+          git push origin HEAD:main
+
+      - name: Lock one upload attempt
+        id: lock
+        if: steps.prepare.outputs.ready == 'true'
+        run: |
+          python upload_short.py --lock
+          python - <<'PY'
+          import json, os
+          with open("state.json", encoding="utf-8") as f:
+              state = json.load(f)
+          pending = state.get("pending_upload")
+          attempt = bool(pending and pending.get("status") == "uploading")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"attempt={'true' if attempt else 'false'}\n")
+          print(f"Upload attempt locked: {attempt}")
+          PY
+
+      - name: Commit upload lock before contacting YouTube
+        if: steps.lock.outputs.attempt == 'true'
+        run: |
+          git add state.json
+          git commit -m "Persist YouTube upload lock"
+          git push origin HEAD:main
+
+      - name: Upload one video
+        if: steps.lock.outputs.attempt == 'true'
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        run: python upload_short.py --publish
+
+      - name: Commit completed publication state
+        if: success() && steps.lock.outputs.attempt == 'true'
+        run: |
+          git add state.json
+          git commit -m "Persist completed YouTube publication"
+          git push origin HEAD:main
+
+      - name: Fail closed if final state could not be persisted
+        if: failure() && steps.lock.outputs.attempt == 'true'
+        run: |
+          echo "The upload stage or final state persistence failed."
+          echo "The last committed state should remain locked as 'uploading' unless the lock commit itself failed."
+          echo "Do not retry automatically. Inspect the YouTube channel and reconcile state.json manually."
+          exit 1
