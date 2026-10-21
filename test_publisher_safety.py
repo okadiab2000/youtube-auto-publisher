@@ -91,6 +91,31 @@ class PublisherLockSafetyTests(unittest.TestCase):
         self.assertEqual(self.read_state(), original)
         self.assertIn("attempt=false", self.output())
 
+    def test_prepare_stops_when_titles_are_exhausted_before_google_api(self):
+        titles_path = Path(self.temp_dir.name) / "titles.txt"
+        titles_path.write_text("title one\\ntitle two\\n", encoding="utf-8")
+        self.write_state({
+            "next_video_index": 1,
+            "next_title_index": 2,
+            "published": [],
+            "processed_slots": [],
+            "pending_upload": None,
+        })
+
+        with patch.object(upload_short, "TITLES_FILE", titles_path):
+            with patch.object(upload_short, "check_schedule"):
+                with patch.object(
+                    upload_short,
+                    "current_slot",
+                    return_value="2026-10-21-20",
+                ):
+                    with patch.object(upload_short, "get_google_services") as google:
+                        upload_short.cmd_prepare()
+
+        google.assert_not_called()
+        self.assertIsNone(self.read_state()["pending_upload"])
+        self.assertIn("ready=false", self.output())
+
     def test_publish_refuses_unlocked_prepared_upload(self):
         self.write_state({
             "pending_upload": {
