@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   publisher:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -64,7 +65,7 @@ jobs:
           pending = state.get("pending_upload")
           ready = bool(pending and pending.get("status") == "prepared")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"ready={'true' if ready else 'false'}\n")
+              f.write(f"ready={'true' if ready else 'false'}\\n")
           print(f"Prepared state present: {ready}")
           PY
 
@@ -93,7 +94,7 @@ jobs:
           pending = state.get("pending_upload")
           attempt = bool(pending and pending.get("status") == "uploading")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"attempt={'true' if attempt else 'false'}\n")
+              f.write(f"attempt={'true' if attempt else 'false'}\\n")
           print(f"Upload attempt locked: {attempt}")
           PY
 
@@ -122,6 +123,5 @@ jobs:
         if: failure() && steps.lock.outputs.attempt == 'true'
         run: |
           echo "The upload stage or final state persistence failed."
-          echo "The last committed state should remain locked as 'uploading' unless the lock commit itself failed."
-          echo "Do not retry automatically. Inspect the YouTube channel and reconcile state.json manually."
+          echo "Do not retry automatically. Inspect YouTube and reconcile state.json manually."
           exit 1
