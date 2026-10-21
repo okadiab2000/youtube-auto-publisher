@@ -26,8 +26,8 @@ jobs:
 
       - name: Compile and test schedule logic
         run: |
-          python -m py_compile upload_short.py test_schedule_safety.py
-          python -m unittest -v test_schedule_safety.py
+          python -m py_compile upload_short.py test_schedule_safety.py test_publisher_safety.py
+          python -m unittest -v test_schedule_safety.py test_publisher_safety.py
 
       - name: Preview next selection without external API calls
         run: python preview_next.py
