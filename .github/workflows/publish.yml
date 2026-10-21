@@ -3,9 +3,8 @@ name: YouTube Shorts Publisher - Scheduled Dry Run
 on:
   workflow_dispatch:
   schedule:
-    # 15:00 and 20:00 Egypt time (UTC+3 at the time this was configured).
-    - cron: "0 12 * * *"
-    - cron: "0 17 * * *"
+    # Check hourly; the script decides the correct Cairo hour (handles DST).
+    - cron: "0 * * * *"
 
 permissions:
   contents: read
@@ -39,5 +38,10 @@ jobs:
           test -f state.json
           python -m py_compile upload_short.py
 
+      - name: Check Cairo publishing slot
+        id: slot
+        run: python upload_short.py --check-slot
+
       - name: Run publisher in DRY RUN mode only
+        if: steps.slot.outputs.allowed == 'true'
         run: python upload_short.py
