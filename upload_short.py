@@ -527,21 +527,14 @@ def cmd_prepare():
         print(f"Slot {slot} was already processed. Nothing to prepare.")
         return
 
-    drive, _ = get_google_services()
-    videos = sync_queue(drive)
     titles = get_titles()
-
-    if not videos:
-        raise RuntimeError(
-            "No videos were found in the configured Google Drive folder."
-        )
-
     video_index = int(state.get("next_video_index", 0))
     title_index = int(state.get("next_title_index", 0))
 
     if title_index < 0:
         raise RuntimeError(f"Invalid next_title_index={title_index}.")
 
+    # Stop before contacting Google APIs when all configured titles are used.
     if title_index >= len(titles):
         print(
             f"TITLE_EXHAUSTED: all {len(titles)} titles have been used. "
@@ -549,6 +542,14 @@ def cmd_prepare():
         )
         write_github_output("ready", "false")
         return
+
+    drive, _ = get_google_services()
+    videos = sync_queue(drive)
+
+    if not videos:
+        raise RuntimeError(
+            "No videos were found in the configured Google Drive folder."
+        )
 
     if video_index < 0 or video_index >= len(videos):
         raise RuntimeError(
