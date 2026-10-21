@@ -41,7 +41,8 @@ jobs:
           test -f queue.json
           test -f titles.txt
           test -f state.json
-          python -m py_compile upload_short.py preview_next.py test_schedule_safety.py
+          python -m py_compile upload_short.py preview_next.py test_schedule_safety.py test_publisher_safety.py
+          python -m unittest -v test_schedule_safety.py test_publisher_safety.py
 
       - name: Check Cairo slot
         id: slot
@@ -68,7 +69,7 @@ jobs:
           pending = state.get("pending_upload")
           ready = bool(pending and pending.get("status") == "prepared")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"ready={'true' if ready else 'false'}\n")
+              f.write(f"ready={'true' if ready else 'false'}\\n")
           print(f"Prepared state present: {ready}")
           PY
 
@@ -97,7 +98,7 @@ jobs:
           pending = state.get("pending_upload")
           attempt = bool(pending and pending.get("status") == "uploading")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"attempt={'true' if attempt else 'false'}\n")
+              f.write(f"attempt={'true' if attempt else 'false'}\\n")
           print(f"Upload attempt locked: {attempt}")
           PY
 
