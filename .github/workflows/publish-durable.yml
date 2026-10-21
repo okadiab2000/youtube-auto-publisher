@@ -1,6 +1,10 @@
 name: YouTube Shorts Publisher - Durable State (Opt In)
 
 on:
+  # Check each hour; Python gates activity to 15:00 and 20:00 Africa/Cairo.
+  # Scheduled runs remain preview-only unless explicitly confirmed by a manual run.
+  schedule:
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       confirm_live_publish:
