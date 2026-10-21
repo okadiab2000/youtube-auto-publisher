@@ -2,9 +2,12 @@ name: YouTube Shorts Publisher - Durable State (Opt In)
 
 on:
   workflow_dispatch:
-  schedule:
-    # Hourly checks; upload_short.py enforces Cairo-local publishing hours.
-    - cron: "0 * * * *"
+    inputs:
+      confirm_live_publish:
+        description: "Set true only after reviewing the workflow and approving a public upload"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -45,14 +48,14 @@ jobs:
         run: python upload_short.py --check-slot
 
       - name: Read-only preview when live publishing is disabled
-        if: steps.slot.outputs.allowed == 'true' && vars.ENABLE_LIVE_PUBLISHING != 'true'
+        if: steps.slot.outputs.allowed == 'true' && (vars.ENABLE_LIVE_PUBLISHING != 'true' || inputs.confirm_live_publish != true)
         run: |
           echo "Live publishing is disabled. This run will not call Google APIs or upload a video."
           python preview_next.py
 
       - name: Prepare next upload
         id: prepare
-        if: steps.slot.outputs.allowed == 'true' && vars.ENABLE_LIVE_PUBLISHING == 'true'
+        if: steps.slot.outputs.allowed == 'true' && (vars.ENABLE_LIVE_PUBLISHING == 'true' && inputs.confirm_live_publish == true)
         env:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
