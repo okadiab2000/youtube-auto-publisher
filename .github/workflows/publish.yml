@@ -1,21 +1,23 @@
-name: YouTube Shorts Publisher - Safe Publishing
+name: YouTube Shorts Publisher - Scheduled Dry Run
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
+    # 15:00 and 20:00 Egypt time (UTC+3 at the time this was configured).
+    - cron: "0 12 * * *"
+    - cron: "0 17 * * *"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: youtube-shorts-publisher
   cancel-in-progress: false
 
 jobs:
-  publish:
+  dry-run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -37,81 +39,5 @@ jobs:
           test -f state.json
           python -m py_compile upload_short.py
 
-      - name: Check Cairo publishing time
-        id: slot
-        run: python upload_short.py --check-slot
-
-      - name: Check for a pending video
-        id: pending
-        if: steps.slot.outputs.allowed == 'true'
-        run: |
-          python - <<'PY'
-          import json
-          import os
-
-          with open("state.json", encoding="utf-8") as f:
-              state = json.load(f)
-
-          pending = state.get("pending_upload") is not None
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"exists={'true' if pending else 'false'}\n")
-
-          print(f"Pending upload exists: {pending}")
-          PY
-
-      - name: Prepare next video
-        if: steps.slot.outputs.allowed == 'true' && steps.pending.outputs.exists == 'false'
-        env:
-          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
-          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
-        run: python upload_short.py --prepare
-
-      - name: Save prepared state and queue
-        if: steps.slot.outputs.allowed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add state.json queue.json
-
-          if ! git diff --cached --quiet; then
-            git commit -m "Save prepared video state and queue"
-            git push
-          fi
-
-      - name: Lock upload against automatic retries
-        id: lock
-        if: steps.slot.outputs.allowed == 'true'
-        run: |
-          python upload_short.py --lock
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add state.json
-
-          if ! git diff --cached --quiet; then
-            git commit -m "Lock video before upload"
-            git push
-          fi
-
-      - name: Publish video publicly
-        if: steps.slot.outputs.allowed == 'true' && steps.lock.outputs.attempt == 'true'
-        env:
-          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
-          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
-        run: python upload_short.py --publish
-
-      - name: Save final publishing state
-        if: ${{ always() && steps.slot.outputs.allowed == 'true' && steps.lock.outputs.attempt == 'true' }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add state.json queue.json
-
-          if ! git diff --cached --quiet; then
-            git commit -m "Record final publishing state"
-            git push
-          fi
+      - name: Run publisher in DRY RUN mode only
+        run: python upload_short.py
