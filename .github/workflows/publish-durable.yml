@@ -74,7 +74,7 @@ jobs:
           pending = state.get("pending_upload")
           ready = bool(pending and pending.get("status") == "prepared")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"ready={'true' if ready else 'false'}\\n")
+              f.write(f"ready={'true' if ready else 'false'}\n")
           print(f"Prepared state present: {ready}")
           PY
 
@@ -103,7 +103,7 @@ jobs:
           pending = state.get("pending_upload")
           attempt = bool(pending and pending.get("status") == "uploading")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"attempt={'true' if attempt else 'false'}\\n")
+              f.write(f"attempt={'true' if attempt else 'false'}\n")
           print(f"Upload attempt locked: {attempt}")
           PY
 
