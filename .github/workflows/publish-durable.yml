@@ -1,10 +1,11 @@
 name: YouTube Shorts Publisher - Durable State (Opt In)
 
 on:
-  # Check each hour; Python gates activity to 15:00 and 20:00 Africa/Cairo.
-  # Scheduled runs may publish only when ENABLE_LIVE_PUBLISHING is explicitly enabled in repository variables; manual runs also require explicit confirmation.
+  # Run away from the top of the hour to reduce GitHub schedule congestion.
+  # UTC hours cover Cairo 15:00 and 20:00 across UTC+2/UTC+3 seasonal offsets.
+  # Python still gates all actual publishing to the allowed Cairo hours.
   schedule:
-    - cron: "0 * * * *"
+    - cron: "7 12,13,17,18 * * *"
   workflow_dispatch:
     inputs:
       confirm_live_publish:
@@ -32,6 +33,11 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -73,7 +79,7 @@ jobs:
           pending = state.get("pending_upload")
           ready = bool(pending and pending.get("status") == "prepared")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"ready={'true' if ready else 'false'}\n")
+              f.write(f"ready={'true' if ready else 'false'}\\n")
           print(f"Prepared state present: {ready}")
           PY
 
@@ -102,7 +108,7 @@ jobs:
           pending = state.get("pending_upload")
           attempt = bool(pending and pending.get("status") == "uploading")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"attempt={'true' if attempt else 'false'}\n")
+              f.write(f"attempt={'true' if attempt else 'false'}\\n")
           print(f"Upload attempt locked: {attempt}")
           PY
 
