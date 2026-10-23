@@ -1,11 +1,10 @@
 name: YouTube Shorts Publisher - Durable State (Opt In)
 
 on:
-  # Run away from the top of the hour to reduce GitHub schedule congestion.
-  # UTC hours cover Cairo 15:00 and 20:00 across UTC+2/UTC+3 seasonal offsets.
-  # Python still gates all actual publishing to the allowed Cairo hours.
+  # Retry the slot check every 10 minutes during the UTC hours that can map to Cairo 15:00 or 20:00.
+  # Python permits uploads only during Cairo hours 15 and 20, so adjacent hours remain safe.
   schedule:
-    - cron: "7 12,13,17,18 * * *"
+    - cron: "*/10 12,13,17,18 * * *"
   workflow_dispatch:
     inputs:
       confirm_live_publish:
