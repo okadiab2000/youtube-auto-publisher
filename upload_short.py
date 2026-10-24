@@ -38,6 +38,12 @@ CAIRO = ZoneInfo("Africa/Cairo")
 ALLOWED_HOURS = {15, 20}
 START_DATE = date(2026, 10, 19)
 
+# Grace window around each allowed hour so delayed (or slightly early)
+# GitHub Actions runs still map to the correct Cairo slot.
+# Window for hour H: from (H-1):50 until (H+1):25 Cairo time.
+EARLY_MINUTES = 10   # accept runs starting 10 minutes before the hour
+LATE_MINUTES = 85    # accept runs up to 1h25m after the hour starts
+
 VIDEO_DESCRIPTION = os.environ.get(
     "VIDEO_DESCRIPTION",
     "استمع وريح قلبك ❤️\n"
@@ -53,8 +59,47 @@ def now_cairo():
     return datetime.now(CAIRO)
 
 
+def resolve_publish_slot(now=None):
+    """
+    Return the Cairo slot key (YYYY-MM-DD-HH) that is currently open for
+    publishing, or None if we are outside every allowed window.
+
+    Each allowed hour H has a window of roughly:
+        (H-1):50  →  (H+1):25   (Cairo local time)
+
+    This absorbs typical GitHub Actions cron jitter (early or late) without
+    ever opening a non-allowed hour as a new slot.
+    """
+    from datetime import timedelta
+
+    now = now or now_cairo()
+
+    if now.date() < START_DATE:
+        return None
+
+    candidates = []
+    for hour in sorted(ALLOWED_HOURS):
+        try:
+            slot_start = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        except ValueError:
+            continue
+
+        window_open = slot_start - timedelta(minutes=EARLY_MINUTES)
+        window_close = slot_start + timedelta(minutes=LATE_MINUTES)
+
+        if window_open <= now < window_close:
+            candidates.append((abs((now - slot_start).total_seconds()), hour, slot_start.date()))
+
+    if not candidates:
+        return None
+
+    # Prefer the closest nominal hour (handles rare overlapping windows)
+    _, hour, slot_date = min(candidates, key=lambda x: x[0])
+    return f"{slot_date:%Y-%m-%d}-{hour}"
+
+
 def check_schedule(now=None):
-    """Prevent publishing before the start date or outside allowed hours."""
+    """Raise if the current Cairo time is outside any allowed publish window."""
     now = now or now_cairo()
 
     if now.date() < START_DATE:
@@ -62,10 +107,12 @@ def check_schedule(now=None):
             f"Publishing starts on {START_DATE}. Current Cairo date: {now.date()}"
         )
 
-    if now.hour not in ALLOWED_HOURS:
+    slot = resolve_publish_slot(now)
+    if slot is None:
         raise RuntimeError(
-            f"Publishing is allowed only at hours {sorted(ALLOWED_HOURS)} "
-            f"Cairo time. Current time: {now:%Y-%m-%d %H:%M:%S}"
+            f"Publishing is allowed only near hours {sorted(ALLOWED_HOURS)} "
+            f"Cairo time (with a short grace window). "
+            f"Current time: {now:%Y-%m-%d %H:%M:%S}"
         )
 
 
@@ -111,7 +158,15 @@ def save_state(state):
 
 
 def current_slot(now=None):
+    """
+    Return the active publish slot for the current moment.
+    Falls back to the strict hour-based key only when no grace window matches
+    (should not happen when check_schedule has already passed).
+    """
     now = now or now_cairo()
+    resolved = resolve_publish_slot(now)
+    if resolved is not None:
+        return resolved
     return f"{now:%Y-%m-%d}-{now.hour}"
 
 
@@ -483,20 +538,21 @@ def publish_video(youtube, local_path, title):
 
 def cmd_check_slot():
     now = now_cairo()
-
-    allowed = (
-        now.date() >= START_DATE
-        and now.hour in ALLOWED_HOURS
-    )
+    slot = resolve_publish_slot(now)
+    allowed = slot is not None
 
     write_github_output(
         "allowed",
         "true" if allowed else "false",
     )
+    if allowed:
+        write_github_output("slot", slot)
 
     print(f"Cairo time: {now:%Y-%m-%d %H:%M:%S}")
     print(f"Start date: {START_DATE}")
     print(f"Allowed hours: {sorted(ALLOWED_HOURS)}")
+    print(f"Grace window: -{EARLY_MINUTES}m / +{LATE_MINUTES}m around each hour")
+    print(f"Resolved slot: {slot}")
     print(f"Publishing allowed: {allowed}")
 
 

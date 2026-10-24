@@ -4,7 +4,7 @@ on:
   # Retry the slot check every 10 minutes during the UTC hours that can map to Cairo 15:00 or 20:00.
   # Python permits uploads only during Cairo hours 15 and 20, so adjacent hours remain safe.
   schedule:
-    - cron: "*/10 12,13,17,18 * * *"
+    - cron: "*/5 11,12,13,16,17,18 * * *"
   workflow_dispatch:
     inputs:
       confirm_live_publish:
