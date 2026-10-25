@@ -47,10 +47,10 @@ class ScheduleSafetyTests(unittest.TestCase):
             (0, 0),
             (12, 0),
             (14, 30),
-            (16, 30),
+            (17, 5),
             (18, 0),
             (19, 30),
-            (21, 30),
+            (22, 5),
             (23, 0),
         ]:
             with self.subTest(hour=hour, minute=minute):
@@ -72,7 +72,7 @@ class ScheduleSafetyTests(unittest.TestCase):
         upload_short.check_schedule(almost_eight)
 
     def test_very_late_run_after_grace_is_blocked(self):
-        too_late = datetime(2026, 10, 23, 21, 30, tzinfo=CAIRO)
+        too_late = datetime(2026, 10, 23, 22, 5, tzinfo=CAIRO)
         self.assertIsNone(upload_short.resolve_publish_slot(too_late))
 
 

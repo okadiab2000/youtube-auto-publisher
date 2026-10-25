@@ -41,8 +41,8 @@ START_DATE = date(2026, 10, 19)
 # Grace window around each allowed hour so delayed (or slightly early)
 # GitHub Actions runs still map to the correct Cairo slot.
 # Window for hour H: from (H-1):50 until (H+1):25 Cairo time.
-EARLY_MINUTES = 10   # accept runs starting 10 minutes before the hour
-LATE_MINUTES = 85    # accept runs up to 1h25m after the hour starts
+EARLY_MINUTES = 15    # accept runs starting 15 minutes before the hour
+LATE_MINUTES = 120    # accept runs up to 2 hours after the hour starts
 
 VIDEO_DESCRIPTION = os.environ.get(
     "VIDEO_DESCRIPTION",
