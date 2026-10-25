@@ -1,6 +1,6 @@
 {
-  "next_video_index": 1,
-  "next_title_index": 1,
+  "next_video_index": 2,
+  "next_title_index": 2,
   "published": [
     {
       "filename": "#اكتب_شي_تؤجر_عليه ♥😴 [M5eT5TcirOY].webm",
@@ -9,20 +9,19 @@
       "title": "استمع وريح قلبك ❤️ #shorts #اكسبلور_فولو #القرآن_الكريم",
       "published_at": "2026-10-17T20:01:05.408568+03:00",
       "slot": "2026-10-17-15"
+    },
+    {
+      "filename": "#اكتب_شي_تؤجر_عليه ♥😴 [iu6fPDwbIiM].webm",
+      "drive_file_id": "1jJdXMXAuC2gPfygOiXGgeSV8YdfWljvE",
+      "youtube_video_id": "8FvfJ3WTNYE",
+      "title": "لعلها تكون سببًا في طمأنينة قلبك 🤍 #shorts #اكسبلور_فولو #قرآن",
+      "published_at": "2026-10-25T20:18:13.619208+03:00",
+      "slot": "2026-10-25-20"
     }
   ],
   "processed_slots": [
-    "2026-10-17-15"
+    "2026-10-17-15",
+    "2026-10-25-20"
   ],
-  "pending_upload": {
-    "filename": "#اكتب_شي_تؤجر_عليه ♥😴 [iu6fPDwbIiM].webm",
-    "drive_file_id": "1jJdXMXAuC2gPfygOiXGgeSV8YdfWljvE",
-    "title": "لعلها تكون سببًا في طمأنينة قلبك 🤍 #shorts #اكسبلور_فولو #قرآن",
-    "slot": "2026-10-25-20",
-    "video_index": 1,
-    "title_index": 1,
-    "started_at": "2026-10-25T20:18:07.427054+03:00",
-    "status": "uploading",
-    "locked_at": "2026-10-25T20:18:09.110659+03:00"
-  }
+  "pending_upload": null
 }
