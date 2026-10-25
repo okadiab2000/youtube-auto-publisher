@@ -22,6 +22,7 @@
     "video_index": 1,
     "title_index": 1,
     "started_at": "2026-10-25T20:18:07.427054+03:00",
-    "status": "prepared"
+    "status": "uploading",
+    "locked_at": "2026-10-25T20:18:09.110659+03:00"
   }
 }
