@@ -1,6 +1,6 @@
 {
-  "next_video_index": 2,
-  "next_title_index": 2,
+  "next_video_index": 3,
+  "next_title_index": 3,
   "published": [
     {
       "filename": "#اكتب_شي_تؤجر_عليه ♥😴 [M5eT5TcirOY].webm",
@@ -17,21 +17,20 @@
       "title": "لعلها تكون سببًا في طمأنينة قلبك 🤍 #shorts #اكسبلور_فولو #قرآن",
       "published_at": "2026-10-25T20:18:13.619208+03:00",
       "slot": "2026-10-25-20"
+    },
+    {
+      "filename": "#اكتب_شي_تؤجر_عليه ♥😴 #المصحف #اكسبلور #الرحمن [x8V3-RsMLgw].webm",
+      "drive_file_id": "18PfQnfyTHV9KwgFm3C26i0ByZw2YDgBP",
+      "youtube_video_id": "MwWu0_E8eZ8",
+      "title": "آيات من القرآن تريح النفس وتهدئ الروح 🌿 #shorts #اكسبلور_فولو #تلاوة_خاشعة",
+      "published_at": "2026-10-26T20:02:13.592428+03:00",
+      "slot": "2026-10-26-20"
     }
   ],
   "processed_slots": [
     "2026-10-17-15",
-    "2026-10-25-20"
+    "2026-10-25-20",
+    "2026-10-26-20"
   ],
-  "pending_upload": {
-    "filename": "#اكتب_شي_تؤجر_عليه ♥😴 #المصحف #اكسبلور #الرحمن [x8V3-RsMLgw].webm",
-    "drive_file_id": "18PfQnfyTHV9KwgFm3C26i0ByZw2YDgBP",
-    "title": "آيات من القرآن تريح النفس وتهدئ الروح 🌿 #shorts #اكسبلور_فولو #تلاوة_خاشعة",
-    "slot": "2026-10-26-20",
-    "video_index": 2,
-    "title_index": 2,
-    "started_at": "2026-10-26T20:02:07.616924+03:00",
-    "status": "uploading",
-    "locked_at": "2026-10-26T20:02:09.533065+03:00"
-  }
+  "pending_upload": null
 }
